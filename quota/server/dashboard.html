@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文件服务器配额面板</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #161d26;
+    --panel-2: #1c2530;
+    --border: #2a3542;
+    --text: #d7e0ea;
+    --muted: #8a99ab;
+    --accent: #4da3ff;
+    --ok: #3ecf8e;
+    --warn: #e8b23a;
+    --danger: #ef5f5f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+  main { padding: 20px 24px 60px; max-width: 1500px; margin: 0 auto; }
+  .cards { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 24px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; min-width: 140px;
+  }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 20px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  section { margin-bottom: 32px; }
+  h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+  h2 .hint { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--panel-2); color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr.grace td { background: rgba(232, 178, 58, .06); }
+  tr.grace-expired td { background: rgba(239, 95, 95, .10); }
+  tr.over-hard td { background: rgba(239, 95, 95, .18); }
+  .bar { position: relative; height: 6px; background: #0b0f14; border-radius: 4px; overflow: hidden; min-width: 90px; }
+  .bar span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+  .bar.warn span { background: var(--warn); }
+  .bar.danger span { background: var(--danger); }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
+  .tag.ok { background: rgba(62, 207, 142, .15); color: var(--ok); }
+  .tag.warn { background: rgba(232, 178, 58, .15); color: var(--warn); }
+  .tag.danger { background: rgba(239, 95, 95, .15); color: var(--danger); }
+  .tag.muted { background: #222c38; color: var(--muted); }
+  .empty { color: var(--muted); padding: 14px; text-align: center; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .reason { color: var(--muted); font-size: 12px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  input, select, button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font: inherit;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .admin-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #msg { min-height: 1.4em; font-size: 12px; color: var(--muted); }
+  #msg.err { color: var(--danger); }
+  #msg.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>文件服务器配额面板</h1>
+  <span class="clock">模拟时间 <code>{{ t .Report.Now }}</code></span>
+  <span class="clock">账户 {{ .Report.Stats.Accounts }} · 存活文件 {{ .Report.Stats.Nodes }} · 已用 {{ bytes .Report.Stats.LiveBytes }} · 累计拒绝 {{ .Report.Stats.DenialsTotal }}</span>
+</header>
+<main>
+
+<div class="cards">
+  <div class="card"><div class="k">用户</div><div class="v">{{ len .Report.Users }}</div></div>
+  <div class="card"><div class="k">组</div><div class="v">{{ len .Report.Groups }}</div></div>
+  <div class="card"><div class="k">目录树</div><div class="v">{{ len .Report.Trees }}</div></div>
+  <div class="card"><div class="k">存活 inode</div><div class="v">{{ .Report.Stats.Nodes }}</div></div>
+  <div class="card"><div class="k">存活空间</div><div class="v">{{ bytes .Report.Stats.LiveBytes }}</div></div>
+  <div class="card"><div class="k">累计拒绝</div><div class="v">{{ .Report.Stats.DenialsTotal }}</div></div>
+  <div class="card"><div class="k">限额/宽限期操作</div><div class="v">{{ .Report.Stats.Activities }}</div></div>
+</div>
+
+<section>
+  <h2>管理员操作 <span class="hint">改限额、延长宽限期；每次都会记录操作人、时间和改动内容</span></h2>
+  <div class="toolbar">
+    <form class="admin-form" onsubmit="return adminAction(event)">
+      <select name="dim">
+        <option value="user">用户</option>
+        <option value="group">组</option>
+        <option value="tree">目录树</option>
+      </select>
+      <input name="id" placeholder="账户编号" size="12" required>
+      <input name="actor" placeholder="操作人" size="10" required>
+      <input name="bytes_soft" placeholder="空间软限额(B)" size="14">
+      <input name="bytes_hard" placeholder="空间硬限额(B)" size="14">
+      <input name="inodes_soft" placeholder="文件数软限额" size="12">
+      <input name="inodes_hard" placeholder="文件数硬限额" size="12">
+      <button type="submit" name="action" value="limits">修改限额</button>
+      <input name="seconds" placeholder="延长秒数" size="8">
+      <button type="submit" name="action" value="grace">延长宽限期</button>
+    </form>
+  </div>
+  <div id="msg"></div>
+  <details>
+    <summary>最近 {{ len .Report.Activity }} 条审计记录</summary>
+    <table>
+      <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>改动</th></tr></thead>
+      <tbody>
+      {{ range .Report.Activity }}
+        <tr>
+          <td><code>{{ t .At }}</code></td>
+          <td>{{ .Actor }}</td>
+          <td>{{ .Action.Label }}</td>
+          <td>{{ dim .Dim }} <code>{{ .Account }}</code></td>
+          <td class="reason">{{ join .Changes "；" }}</td>
+        </tr>
+      {{ else }}
+        <tr><td colspan="5" class="empty">还没有管理员操作</td></tr>
+      {{ end }}
+      </tbody>
+    </table>
+  </details>
+</section>
+
+{{ template "dimtable" dict "Title" "用户" "Hint" "每个用户自己的配额" "Rows" .Report.Users "Dim" "user" "Cols" 7 }}
+{{ template "dimtable" dict "Title" "组" "Hint" "组内所有文件合计" "Rows" .Report.Groups "Dim" "group" "Cols" 7 }}
+{{ template "dimtable" dict "Title" "目录树" "Hint" "按目录编号继承，子目录计入所属树" "Rows" .Report.Trees "Dim" "tree" "Cols" 8 }}
+
+<section>
+  <h2>被拒绝的操作 <span class="hint">最新 {{ len .Report.Denials }} 条；写入被截断时记录实际写入量</span></h2>
+  <table>
+    <thead>
+      <tr>
+        <th>时间</th><th>操作</th><th>对象</th><th>维度 / 账户</th><th>资源</th>
+        <th>已用</th><th>请求</th><th>生效限额</th><th>实际写入</th><th>原因</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{ range .Report.Denials }}
+      <tr>
+        <td><code>{{ t .At }}</code></td>
+        <td>{{ .Op.Label }}</td>
+        <td><code>{{ .Path }}</code></td>
+        <td>{{ dim .Dim }} <code>{{ .Account }}</code></td>
+        <td>{{ kind .Kind }}</td>
+        <td class="num">{{ num .Used }}<br><span class="reason">{{ bytes .Used }}</span></td>
+        <td class="num">{{ num .Demand }}<br><span class="reason">{{ bytes .Demand }}</span></td>
+        <td class="num">{{ num .Limit }}{{ if .GraceExpired }} <span class="tag warn">宽限期已过</span>{{ end }}</td>
+        <td class="num">{{ .Written }}</td>
+        <td class="reason">{{ .Reason }}</td>
+      </tr>
+    {{ else }}
+      <tr><td colspan="10" class="empty">还没有被拒绝的操作</td></tr>
+    {{ end }}
+    </tbody>
+  </table>
+</section>
+
+</main>
+
+<script>
+async function adminAction(ev) {
+  ev.preventDefault();
+  const f = ev.target;
+  const btn = ev.submitter;
+  const action = btn ? btn.value : "limits";
+  const body = {
+    dim: f.dim.value, id: f.id.value.trim(), actor: f.actor.value.trim(),
+  };
+  const msg = document.getElementById("msg");
+  msg.className = ""; msg.textContent = "提交中…";
+  let url;
+  if (action === "limits") {
+    const num = (s) => { const v = (s || "").trim(); return v === "" ? 0 : parseInt(v, 10); };
+    body.bytes = { soft: num(f.bytes_soft.value), hard: num(f.bytes_hard.value) };
+    body.inodes = { soft: num(f.inodes_soft.value), hard: num(f.inodes_hard.value) };
+    url = "/api/limits";
+  } else {
+    body.seconds = parseInt((f.seconds.value || "").trim(), 10);
+    url = "/api/grace";
+  }
+  try {
+    const res = await fetch(url, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) { msg.className = "err"; msg.textContent = data.error || "操作失败"; return; }
+    msg.className = "ok"; msg.textContent = "已记录，正在刷新…";
+    location.reload();
+  } catch (e) {
+    msg.className = "err"; msg.textContent = String(e);
+  }
+  return false;
+}
+</script>
+</body>
+</html>
+
+{{ define "dimtable" }}
+<section>
+  <h2>{{ .Title }} <span class="hint">{{ .Hint }}</span></h2>
+  <table>
+    <thead>
+      <tr>
+        <th>账户</th>
+        {{ if eq .Dim "tree" }}<th>挂载目录</th>{{ end }}
+        <th>已用空间</th><th>空间软/硬限额</th><th>空间占用</th>
+        <th>文件数</th><th>文件数软/硬限额</th><th>文件数占用</th>
+        <th>宽限期</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{ range .Rows }}
+      <tr class="{{ worstClass . }}">
+        <td><code>{{ .ID }}</code></td>
+        {{ if eq $.Dim "tree" }}<td><code>{{ .MountPath }}</code></td>{{ end }}
+        <td class="num">{{ bytes .BytesUsed }}</td>
+        <td class="num">{{ lim .BytesSoft }} / {{ lim .BytesHard }}</td>
+        <td>
+          <div class="bar {{ barClass .BytesUsed .BytesLimitNow .BytesGrace }}">
+            <span style="width: {{ printf "%.1f" (pct .BytesUsed .BytesLimitNow) }}%"></span>
+          </div>
+          <span class="reason">{{ pctText .BytesUsed .BytesLimitNow }}</span>
+        </td>
+        <td class="num">{{ .InodesUsed }}</td>
+        <td class="num">{{ limInode .InodesSoft }} / {{ limInode .InodesHard }}</td>
+        <td>
+          <div class="bar {{ barClass .InodesUsed .InodesLimitNow .InodesGrace }}">
+            <span style="width: {{ printf "%.1f" (pct .InodesUsed .InodesLimitNow) }}%"></span>
+          </div>
+          <span class="reason">{{ pctText .InodesUsed .InodesLimitNow }}</span>
+        </td>
+        <td>{{ template "gracecell" dict "B" .BytesGrace "I" .InodesGrace }}</td>
+      </tr>
+    {{ else }}
+      <tr><td colspan="{{ .Cols }}" class="empty">没有账户</td></tr>
+    {{ end }}
+    </tbody>
+  </table>
+</section>
+{{ end }}
+
+{{ define "gracecell" }}
+  {{ if .B.Active }}
+    {{ if .B.Expired }}<span class="tag danger">空间 宽限期已过</span>{{ else }}<span class="tag warn">空间 剩余 {{ dur .B.Remaining }}</span>{{ end }}
+  {{ end }}
+  {{ if .I.Active }}
+    {{ if .I.Expired }}<span class="tag danger">文件数 宽限期已过</span>{{ else }}<span class="tag warn">文件数 剩余 {{ dur .I.Remaining }}</span>{{ end }}
+  {{ end }}
+  {{ if and (not .B.Active) (not .I.Active) }}<span class="tag muted">—</span>{{ end }}
+{{ end }}
